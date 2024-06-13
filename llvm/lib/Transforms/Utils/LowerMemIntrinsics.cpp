@@ -21,6 +21,12 @@
 
 using namespace llvm;
 
+static cl::opt<bool> MemcpyOverlapBypass(
+  "not-upstream-memcpy-overlap-bypass",
+  cl::desc("Emit guard to bypass memcpy for equal arguments"),
+  cl::init(false), cl::Hidden);
+
+
 void llvm::createMemCpyLoopKnownSize(
     Instruction *InsertBefore, Value *SrcAddr, Value *DstAddr,
     ConstantInt *CopyLen, Align SrcAlign, Align DstAlign, bool SrcIsVolatile,
@@ -29,6 +35,7 @@ void llvm::createMemCpyLoopKnownSize(
   // No need to expand zero length copies.
   if (CopyLen->isZero())
     return;
+  llvm::dbgs() << "expanding memcpy as loop with known size\n";
 
   BasicBlock *PreLoopBB = InsertBefore->getParent();
   BasicBlock *PostLoopBB = nullptr;
@@ -39,6 +46,31 @@ void llvm::createMemCpyLoopKnownSize(
   MDNode *NewDomain = MDB.createAnonymousAliasScopeDomain("MemCopyDomain");
   StringRef Name = "MemCopyAliasScope";
   MDNode *NewScope = MDB.createAnonymousAliasScope(NewDomain, Name);
+
+  // Only skip a no-op memcpy if the operands are not volatile.
+  bool InsertOverlapBypass =
+      MemcpyOverlapBypass && !SrcIsVolatile && !DstIsVolatile;
+
+  if (CanOverlap && InsertOverlapBypass) {
+    llvm::dbgs() << "adding bypass code\n";
+
+    BasicBlock *PostExpandBB =
+        PreLoopBB->splitBasicBlock(InsertBefore, "post-memcpy-expansion");
+
+    // Skip the memcpy if source and destination are equal.
+    BasicBlock *ActualPreLoopBB = PreLoopBB->splitBasicBlock(
+        PreLoopBB->getTerminator(), "pre-memcpy-expansion");
+
+    IRBuilder<> GuardBuilder(PreLoopBB->getTerminator());
+
+    GuardBuilder.CreateCondBr(GuardBuilder.CreateICmpEQ(SrcAddr, DstAddr),
+                              PostExpandBB, ActualPreLoopBB);
+    PreLoopBB->getTerminator()->eraseFromParent();
+
+    PreLoopBB = ActualPreLoopBB;
+    // insert code before the end of the middle BB
+    InsertBefore = ActualPreLoopBB->getTerminator();
+  }
 
   unsigned SrcAS = cast<PointerType>(SrcAddr->getType())->getAddressSpace();
   unsigned DstAS = cast<PointerType>(DstAddr->getType())->getAddressSpace();
@@ -76,7 +108,7 @@ void llvm::createMemCpyLoopKnownSize(
         LoopBuilder.CreateInBoundsGEP(LoopOpType, SrcAddr, LoopIndex);
     LoadInst *Load = LoopBuilder.CreateAlignedLoad(LoopOpType, SrcGEP,
                                                    PartSrcAlign, SrcIsVolatile);
-    if (!CanOverlap) {
+    if (!CanOverlap || InsertOverlapBypass) {
       // Set alias scope for loads.
       Load->setMetadata(LLVMContext::MD_alias_scope,
                         MDNode::get(Ctx, NewScope));
@@ -85,7 +117,7 @@ void llvm::createMemCpyLoopKnownSize(
         LoopBuilder.CreateInBoundsGEP(LoopOpType, DstAddr, LoopIndex);
     StoreInst *Store = LoopBuilder.CreateAlignedStore(
         Load, DstGEP, PartDstAlign, DstIsVolatile);
-    if (!CanOverlap) {
+    if (!CanOverlap || InsertOverlapBypass) {
       // Indicate that stores don't overlap loads.
       Store->setMetadata(LLVMContext::MD_noalias, MDNode::get(Ctx, NewScope));
     }
@@ -132,7 +164,7 @@ void llvm::createMemCpyLoopKnownSize(
           OpTy, SrcAddr, ConstantInt::get(TypeOfCopyLen, GepIndex));
       LoadInst *Load =
           RBuilder.CreateAlignedLoad(OpTy, SrcGEP, PartSrcAlign, SrcIsVolatile);
-      if (!CanOverlap) {
+      if (!CanOverlap || InsertOverlapBypass) {
         // Set alias scope for loads.
         Load->setMetadata(LLVMContext::MD_alias_scope,
                           MDNode::get(Ctx, NewScope));
@@ -141,7 +173,7 @@ void llvm::createMemCpyLoopKnownSize(
           OpTy, DstAddr, ConstantInt::get(TypeOfCopyLen, GepIndex));
       StoreInst *Store = RBuilder.CreateAlignedStore(Load, DstGEP, PartDstAlign,
                                                      DstIsVolatile);
-      if (!CanOverlap) {
+      if (!CanOverlap || InsertOverlapBypass) {
         // Indicate that stores don't overlap loads.
         Store->setMetadata(LLVMContext::MD_noalias, MDNode::get(Ctx, NewScope));
       }
@@ -181,9 +213,31 @@ void llvm::createMemCpyLoopUnknownSize(
     Align SrcAlign, Align DstAlign, bool SrcIsVolatile, bool DstIsVolatile,
     bool CanOverlap, const TargetTransformInfo &TTI,
     std::optional<uint32_t> AtomicElementSize) {
+  llvm::dbgs() << "expanding memcpy as loop with unknown size\n";
   BasicBlock *PreLoopBB = InsertBefore->getParent();
   BasicBlock *PostLoopBB =
       PreLoopBB->splitBasicBlock(InsertBefore, "post-loop-memcpy-expansion");
+
+  // Only skip a no-op memcpy if the operands are not volatile.
+  bool InsertOverlapBypass =
+      MemcpyOverlapBypass && !SrcIsVolatile && !DstIsVolatile;
+
+  if (CanOverlap && InsertOverlapBypass) {
+    llvm::dbgs() << "adding bypass code\n";
+
+    // Skip the memcpy if source and destination are equal.
+    BasicBlock *ActualPreLoopBB = PreLoopBB->splitBasicBlock(
+        PreLoopBB->getTerminator(), "pre-loop-memcpy-expansion");
+    // no instructions are inserted into PostLoopBB, so we can just use it as a
+    // target here.
+
+    IRBuilder<> GuardBuilder(PreLoopBB->getTerminator());
+
+    GuardBuilder.CreateCondBr(GuardBuilder.CreateICmpEQ(SrcAddr, DstAddr),
+                              PostLoopBB, ActualPreLoopBB);
+    PreLoopBB->getTerminator()->eraseFromParent();
+    PreLoopBB = ActualPreLoopBB;
+  }
 
   Function *ParentFunc = PreLoopBB->getParent();
   const DataLayout &DL = ParentFunc->getParent()->getDataLayout();
@@ -233,14 +287,14 @@ void llvm::createMemCpyLoopUnknownSize(
   Value *SrcGEP = LoopBuilder.CreateInBoundsGEP(LoopOpType, SrcAddr, LoopIndex);
   LoadInst *Load = LoopBuilder.CreateAlignedLoad(LoopOpType, SrcGEP,
                                                  PartSrcAlign, SrcIsVolatile);
-  if (!CanOverlap) {
+  if (!CanOverlap || InsertOverlapBypass) {
     // Set alias scope for loads.
     Load->setMetadata(LLVMContext::MD_alias_scope, MDNode::get(Ctx, NewScope));
   }
   Value *DstGEP = LoopBuilder.CreateInBoundsGEP(LoopOpType, DstAddr, LoopIndex);
   StoreInst *Store =
       LoopBuilder.CreateAlignedStore(Load, DstGEP, PartDstAlign, DstIsVolatile);
-  if (!CanOverlap) {
+  if (!CanOverlap || InsertOverlapBypass) {
     // Indicate that stores don't overlap loads.
     Store->setMetadata(LLVMContext::MD_noalias, MDNode::get(Ctx, NewScope));
   }
@@ -304,7 +358,7 @@ void llvm::createMemCpyLoopUnknownSize(
         ResBuilder.CreateInBoundsGEP(ResLoopOpType, SrcAddr, FullOffset);
     LoadInst *Load = ResBuilder.CreateAlignedLoad(ResLoopOpType, SrcGEP,
                                                   PartSrcAlign, SrcIsVolatile);
-    if (!CanOverlap) {
+    if (!CanOverlap || InsertOverlapBypass) {
       // Set alias scope for loads.
       Load->setMetadata(LLVMContext::MD_alias_scope,
                         MDNode::get(Ctx, NewScope));
@@ -313,7 +367,7 @@ void llvm::createMemCpyLoopUnknownSize(
         ResBuilder.CreateInBoundsGEP(ResLoopOpType, DstAddr, FullOffset);
     StoreInst *Store = ResBuilder.CreateAlignedStore(Load, DstGEP, PartDstAlign,
                                                      DstIsVolatile);
-    if (!CanOverlap) {
+    if (!CanOverlap || InsertOverlapBypass) {
       // Indicate that stores don't overlap loads.
       Store->setMetadata(LLVMContext::MD_noalias, MDNode::get(Ctx, NewScope));
     }
@@ -371,6 +425,7 @@ static void createMemMoveLoop(Instruction *InsertBefore, Value *SrcAddr,
                               Align DstAlign, bool SrcIsVolatile,
                               bool DstIsVolatile,
                               const TargetTransformInfo &TTI) {
+  llvm::dbgs() << "expanding memmove as loop\n";
   Type *TypeOfCopyLen = CopyLen->getType();
   BasicBlock *OrigBB = InsertBefore->getParent();
   Function *F = OrigBB->getParent();

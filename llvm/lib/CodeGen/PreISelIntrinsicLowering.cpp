@@ -14,6 +14,7 @@
 #include "llvm/CodeGen/PreISelIntrinsicLowering.h"
 #include "llvm/Analysis/ObjCARCInstKind.h"
 #include "llvm/Analysis/ObjCARCUtil.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetLowering.h"
@@ -40,11 +41,17 @@ static cl::opt<int64_t> MemIntrinsicExpandSizeThresholdOpt(
     cl::desc("Set minimum mem intrinsic size to expand in IR"), cl::init(-1),
     cl::Hidden);
 
+static cl::opt<bool>
+    MemIntrinsicUseSCEV("not-upstream-mem-intrinsic-use-scev",
+                        cl::desc("Use Scalar Evolution when expanding memops"),
+                        cl::init(false), cl::Hidden);
+
 namespace {
 
 struct PreISelIntrinsicLowering {
   const TargetMachine &TM;
   const function_ref<TargetTransformInfo &(Function &)> LookupTTI;
+  const function_ref<ScalarEvolution *(Function &)> LookupSCEV;
 
   /// If this is true, assume it's preferably to leave memory intrinsic calls
   /// for replacement with a library call later. Otherwise this depends on
@@ -54,8 +61,10 @@ struct PreISelIntrinsicLowering {
   explicit PreISelIntrinsicLowering(
       const TargetMachine &TM_,
       function_ref<TargetTransformInfo &(Function &)> LookupTTI_,
+      function_ref<ScalarEvolution *(Function &)> LookupSCEV_,
       bool UseMemIntrinsicLibFunc_ = true)
       : TM(TM_), LookupTTI(LookupTTI_),
+        LookupSCEV(MemIntrinsicUseSCEV ? LookupSCEV_ : nullptr),
         UseMemIntrinsicLibFunc(UseMemIntrinsicLibFunc_) {}
 
   static bool shouldExpandMemIntrinsicWithSize(Value *Size,
@@ -376,6 +385,7 @@ public:
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addRequired<TargetTransformInfoWrapperPass>();
     AU.addRequired<TargetPassConfig>();
+    AU.addRequired<ScalarEvolutionWrapperPass>(); // todo not required?
   }
 
   bool runOnModule(Module &M) override {
@@ -384,7 +394,13 @@ public:
     };
 
     const auto &TM = getAnalysis<TargetPassConfig>().getTM<TargetMachine>();
-    PreISelIntrinsicLowering Lowering(TM, LookupTTI);
+
+    auto LookupSCEV = [this](Function &F) -> ScalarEvolution * {
+      auto *SE = getAnalysisIfAvailable<ScalarEvolutionWrapperPass>();
+      return SE ? &SE->getSE() : nullptr;
+    };
+
+    PreISelIntrinsicLowering Lowering(TM, LookupTTI, LookupSCEV);
     return Lowering.lowerIntrinsics(M);
   }
 };
@@ -413,8 +429,11 @@ PreservedAnalyses PreISelIntrinsicLoweringPass::run(Module &M,
   auto LookupTTI = [&FAM](Function &F) -> TargetTransformInfo & {
     return FAM.getResult<TargetIRAnalysis>(F);
   };
+  auto LookupSCEV = [&FAM](Function &F) -> ScalarEvolution * {
+    return &FAM.getResult<ScalarEvolutionAnalysis>(F);
+  };
 
-  PreISelIntrinsicLowering Lowering(TM, LookupTTI);
+  PreISelIntrinsicLowering Lowering(TM, LookupTTI, LookupSCEV);
   if (!Lowering.lowerIntrinsics(M))
     return PreservedAnalyses::all();
   else

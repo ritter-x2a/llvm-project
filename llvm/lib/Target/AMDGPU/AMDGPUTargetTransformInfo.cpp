@@ -32,6 +32,11 @@ using namespace llvm;
 
 #define DEBUG_TYPE "AMDGPUtti"
 
+static cl::opt<unsigned> MemCpyLoopLoweringVectorWidth(
+    "not-upstream-amdgpu-memcpy-loop-lowering-vector-width",
+    cl::desc("Preferred width of vector operations in memcpy loops"),
+    cl::init(4), cl::Hidden);
+
 static cl::opt<unsigned> UnrollThresholdPrivate(
   "amdgpu-unroll-threshold-private",
   cl::desc("Unroll threshold for AMDGPU if private memory used in a loop"),
@@ -444,7 +449,8 @@ Type *GCNTTIImpl::getMemcpyLoopLoweringType(
 
   // Global memory works best with 16-byte accesses. Private memory will also
   // hit this, although they'll be decomposed.
-  return FixedVectorType::get(Type::getInt32Ty(Context), 4);
+  int VectorWidth = MemCpyLoopLoweringVectorWidth;
+  return FixedVectorType::get(Type::getInt32Ty(Context), VectorWidth);
 }
 
 void GCNTTIImpl::getMemcpyLoopResidualLoweringType(
@@ -452,7 +458,6 @@ void GCNTTIImpl::getMemcpyLoopResidualLoweringType(
     unsigned RemainingBytes, unsigned SrcAddrSpace, unsigned DestAddrSpace,
     unsigned SrcAlign, unsigned DestAlign,
     std::optional<uint32_t> AtomicCpySize) const {
-  assert(RemainingBytes < 16);
 
   if (AtomicCpySize)
     BaseT::getMemcpyLoopResidualLoweringType(
@@ -462,6 +467,12 @@ void GCNTTIImpl::getMemcpyLoopResidualLoweringType(
   unsigned MinAlign = std::min(SrcAlign, DestAlign);
 
   if (MinAlign != 2) {
+    Type *I32x4Ty = FixedVectorType::get(Type::getInt32Ty(Context), 4);
+    while (RemainingBytes >= 16) {
+      OpsOut.push_back(I32x4Ty);
+      RemainingBytes -= 16;
+    }
+
     Type *I64Ty = Type::getInt64Ty(Context);
     while (RemainingBytes >= 8) {
       OpsOut.push_back(I64Ty);

@@ -7704,6 +7704,8 @@ static SDValue getMemcpyLoadsAndStores(SelectionDAG &DAG, const SDLoc &dl,
   if (Src.isUndef())
     return Chain;
 
+  llvm::dbgs() << "reached getMemcpyLoadsAndStores (old isel)\n";
+
   // Expand memcpy to a series of load and store ops if the size operand falls
   // below a certain threshold.
   // TODO: In the AlwaysInline case, if the size is big then generate a loop
