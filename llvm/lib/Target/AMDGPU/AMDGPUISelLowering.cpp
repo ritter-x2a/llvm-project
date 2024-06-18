@@ -36,6 +36,12 @@ static cl::opt<bool> AMDGPUBypassSlowDiv(
   cl::desc("Skip 64-bit divide for dynamic 32-bit values"),
   cl::init(true));
 
+
+static cl::opt<int> AMDGPUMaxGluedStoresPerMemcpy(
+  "not-upstream-amdgpu-max-glued-stores-per-memcpy",
+  cl::desc("Set MaxGluedStoresPerMemcpy"),
+  cl::init(0));
+
 // Find a larger type to do a load / store of a vector with.
 EVT AMDGPUTargetLowering::getEquivalentMemType(LLVMContext &Ctx, EVT VT) {
   unsigned StoreSize = VT.getStoreSizeInBits();
@@ -64,6 +70,8 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(const TargetMachine &TM,
   MaxStoresPerMemset = MaxStoresPerMemsetOptSize = ~0U;
   MaxStoresPerMemcpy = MaxStoresPerMemcpyOptSize = ~0U;
   MaxStoresPerMemmove = MaxStoresPerMemmoveOptSize = ~0U;
+
+  MaxGluedStoresPerMemcpy = AMDGPUMaxGluedStoresPerMemcpy;
 
   // Lower floating point store/load to integer store/load to reduce the number
   // of patterns in tablegen.
