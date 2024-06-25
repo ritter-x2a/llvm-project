@@ -47,9 +47,13 @@ void llvm::createMemCpyLoopKnownSize(
   StringRef Name = "MemCopyAliasScope";
   MDNode *NewScope = MDB.createAnonymousAliasScope(NewDomain, Name);
 
-  // Only skip a no-op memcpy if the operands are not volatile.
+  unsigned SrcAS = SrcAddr->getType()->getPointerAddressSpace();
+  unsigned DstAS = DstAddr->getType()->getPointerAddressSpace();
+
+  // Only skip a no-op memcpy if the operands are not volatile and if the
+  // pointers are comparable.
   bool InsertOverlapBypass =
-      MemcpyOverlapBypass && !SrcIsVolatile && !DstIsVolatile;
+      MemcpyOverlapBypass && !SrcIsVolatile && !DstIsVolatile && SrcAS == DstAS;
 
   if (CanOverlap && InsertOverlapBypass) {
     llvm::dbgs() << "adding bypass code\n";
@@ -71,9 +75,6 @@ void llvm::createMemCpyLoopKnownSize(
     // insert code before the end of the middle BB
     InsertBefore = ActualPreLoopBB->getTerminator();
   }
-
-  unsigned SrcAS = cast<PointerType>(SrcAddr->getType())->getAddressSpace();
-  unsigned DstAS = cast<PointerType>(DstAddr->getType())->getAddressSpace();
 
   Type *TypeOfCopyLen = CopyLen->getType();
   Type *LoopOpType = TTI.getMemcpyLoopLoweringType(
@@ -218,9 +219,13 @@ void llvm::createMemCpyLoopUnknownSize(
   BasicBlock *PostLoopBB =
       PreLoopBB->splitBasicBlock(InsertBefore, "post-loop-memcpy-expansion");
 
-  // Only skip a no-op memcpy if the operands are not volatile.
+  unsigned SrcAS = SrcAddr->getType()->getPointerAddressSpace();
+  unsigned DstAS = DstAddr->getType()->getPointerAddressSpace();
+
+  // Only skip a no-op memcpy if the operands are not volatile and if the
+  // pointers are comparable.
   bool InsertOverlapBypass =
-      MemcpyOverlapBypass && !SrcIsVolatile && !DstIsVolatile;
+      MemcpyOverlapBypass && !SrcIsVolatile && !DstIsVolatile && SrcAS == DstAS;
 
   if (CanOverlap && InsertOverlapBypass) {
     llvm::dbgs() << "adding bypass code\n";
@@ -246,9 +251,6 @@ void llvm::createMemCpyLoopUnknownSize(
   MDNode *NewDomain = MDB.createAnonymousAliasScopeDomain("MemCopyDomain");
   StringRef Name = "MemCopyAliasScope";
   MDNode *NewScope = MDB.createAnonymousAliasScope(NewDomain, Name);
-
-  unsigned SrcAS = cast<PointerType>(SrcAddr->getType())->getAddressSpace();
-  unsigned DstAS = cast<PointerType>(DstAddr->getType())->getAddressSpace();
 
   Type *LoopOpType = TTI.getMemcpyLoopLoweringType(
       Ctx, CopyLen, SrcAS, DstAS, SrcAlign.value(), DstAlign.value(),
