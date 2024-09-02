@@ -11594,7 +11594,7 @@ ARMTargetLowering::EmitStructByval(MachineInstr &MI,
   MF->insert(It, exitMBB);
 
   // Set the call frame size on entry to the new basic blocks.
-  unsigned CallFrameSize = TII->getCallFrameSizeAt(MI);
+  std::optional<unsigned> CallFrameSize = TII->getCallFrameSizeAt(MI);
   loopMBB->setCallFrameSize(CallFrameSize);
   exitMBB->setCallFrameSize(CallFrameSize);
 
@@ -12195,7 +12195,7 @@ ARMTargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
     F->insert(It, sinkMBB);
 
     // Set the call frame size on entry to the new basic blocks.
-    unsigned CallFrameSize = TII->getCallFrameSizeAt(MI);
+    std::optional<unsigned> CallFrameSize = TII->getCallFrameSizeAt(MI);
     copy0MBB->setCallFrameSize(CallFrameSize);
     sinkMBB->setCallFrameSize(CallFrameSize);
 
