@@ -3810,6 +3810,8 @@ void MachineVerifier::verifyStackFrame() {
   if (FrameSetupOpcode == ~0u && FrameDestroyOpcode == ~0u)
     return;
 
+  TargetInstrInfo::CallFrameSizeInfo CFSI(*TII, *MF);
+
   SmallVector<StackStateOfBB, 8> SPState;
   SPState.resize(MF->getNumBlockIDs());
   df_iterator_default_set<const MachineBasicBlock *> Reachable;
@@ -3832,11 +3834,12 @@ void MachineVerifier::verifyStackFrame() {
       BBState.Exit = BBState.Entry;
     }
 
-    if (MBB->getCallFrameSize() != BBState.Entry) {
+    auto OptimisticCallFrameSize = CFSI.getCallFrameSizeAt(*MBB);
+    if (OptimisticCallFrameSize != BBState.Entry) {
       report("Call frame size on entry does not match value computed from "
              "predecessor",
              MBB);
-      errs() << "Call frame size on entry " << MBB->getCallFrameSize()
+      errs() << "Call frame size on entry " << OptimisticCallFrameSize
              << " does not match value computed from predecessor "
              << BBState.Entry << '\n';
     }

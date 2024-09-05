@@ -1343,18 +1343,20 @@ void PEI::insertZeroCallUsedRegs(MachineFunction &MF) {
 /// offsets.
 void PEI::replaceFrameIndicesBackward(MachineFunction &MF) {
   const TargetFrameLowering &TFI = *MF.getSubtarget().getFrameLowering();
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  TargetInstrInfo::CallFrameSizeInfo CFSI(TII, MF);
 
   for (auto &MBB : MF) {
     int SPAdj = 0;
     if (!MBB.succ_empty()) {
       // Get the SP adjustment for the end of MBB from the start of any of its
       // successors. They should all be the same.
-      assert(all_of(MBB.successors(), [&MBB](const MachineBasicBlock *Succ) {
-        return Succ->getCallFrameSizeOrZero() ==
-               (*MBB.succ_begin())->getCallFrameSizeOrZero();
+      assert(all_of(MBB.successors(), [&MBB, &CFSI](const MachineBasicBlock *Succ) {
+        return CFSI.getCallFrameSizeAt(*Succ).value_or(0u) ==
+               CFSI.getCallFrameSizeAt(**MBB.succ_begin()).value_or(0u);
       }));
       const MachineBasicBlock &FirstSucc = **MBB.succ_begin();
-      SPAdj = TFI.alignSPAdjust(FirstSucc.getCallFrameSizeOrZero());
+      SPAdj = TFI.alignSPAdjust(CFSI.getCallFrameSizeAt(FirstSucc).value_or(0u));
       if (TFI.getStackGrowthDirection() == TargetFrameLowering::StackGrowsUp)
         SPAdj = -SPAdj;
     }
@@ -1371,9 +1373,11 @@ void PEI::replaceFrameIndicesBackward(MachineFunction &MF) {
 /// register references and actual offsets.
 void PEI::replaceFrameIndices(MachineFunction &MF) {
   const TargetFrameLowering &TFI = *MF.getSubtarget().getFrameLowering();
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  TargetInstrInfo::CallFrameSizeInfo CFSI(TII, MF);
 
   for (auto &MBB : MF) {
-    int SPAdj = TFI.alignSPAdjust(MBB.getCallFrameSizeOrZero());
+    int SPAdj = TFI.alignSPAdjust(CFSI.getCallFrameSizeAt(MBB).value_or(0u));
     if (TFI.getStackGrowthDirection() == TargetFrameLowering::StackGrowsUp)
       SPAdj = -SPAdj;
 

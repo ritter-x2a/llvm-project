@@ -2275,6 +2275,79 @@ public:
   getCallFrameSizeAt(MachineBasicBlock &MBB,
                      MachineBasicBlock::iterator MII) const;
 
+  /// For computing the call frame size based on CallFrameSetup and Destroy
+  /// opcodes on demand and caching the results. Changes to the CFG may
+  /// invalidate the information stored.
+  class CallFrameSizeInfo {
+    // TODO deduplicate functionality from machineverifier
+  public:
+    /// No value means no call frame, zero-sized call frames exist.
+    using callframesize_t = std::optional<unsigned>;
+
+    CallFrameSizeInfo(const TargetInstrInfo &TII, const MachineFunction &MF)
+        : TII(TII), MF(MF), CFSetupOpc(TII.getCallFrameSetupOpcode()),
+          CFDestroyOpc(TII.getCallFrameDestroyOpcode()) {
+      HasCFOpcs = CFSetupOpc != ~0u && CFDestroyOpc != ~0u;
+      CFState.resize(MF.getNumBlockIDs());
+    }
+
+    /// Get the call frame size at the beginning of MBB. Stores intermediate
+    /// results to accelerate subsequent calls.
+    /// This method assumes that CallFrameSetup and Destroy instructions are
+    /// used correctly, i.e., there are no nested call frames, each
+    /// CallFrameDestroy is preceded by CallFrameSetups with the same size, and
+    /// each CallFrameSetup is followed by CallFrameDestroys with the same size.
+    callframesize_t getCallFrameSizeAt(const MachineBasicBlock &MBB);
+
+    /// Get the call frame size right before MI. Stores intermediate
+    /// results to accelerate subsequent calls.
+    /// This method assumes that CallFrameSetup and Destroy instructions are
+    /// used correctly, i.e., there are no nested call frames, each
+    /// CallFrameDestroy is preceded by CallFrameSetups with the same size, and
+    /// each CallFrameSetup is followed by CallFrameDestroys with the same size.
+    callframesize_t getCallFrameSizeAt(const MachineInstr &MI);
+
+  private:
+    struct CFStateOfBB {
+      CFStateOfBB() = default;
+      CFStateOfBB(callframesize_t EntryVal, callframesize_t ExitVal)
+          : Entry(EntryVal), Exit(ExitVal) {}
+
+      callframesize_t Entry;
+      callframesize_t Exit;
+      bool EntryIsComputed = false;
+      bool ExitIsComputed = false;
+
+      bool IsComputing = false;
+      bool FoundInLoop = false;
+    };
+
+    struct Result {
+      bool IsDetermined;
+      callframesize_t Value;
+
+      Result(bool IsDetermined, callframesize_t Value) : IsDetermined(IsDetermined), Value(Value) {}
+
+      static Result undetermined() {
+        return Result(false, std::nullopt);
+      }
+
+      static Result determined(callframesize_t V) {
+        return Result(true, V);
+      }
+    };
+
+    Result computeCallFrameSizeAt(const MachineBasicBlock &MBB, MachineBasicBlock::const_iterator MII);
+
+    const TargetInstrInfo &TII;
+    const MachineFunction &MF;
+    unsigned int CFSetupOpc;
+    unsigned int CFDestroyOpc;
+    bool HasCFOpcs;
+    SmallVector<CFStateOfBB, 8> CFState;
+  };
+
+
   /// Fills in the necessary MachineOperands to refer to a frame index.
   /// The best way to understand this is to print `asm(""::"m"(x));` after
   /// finalize-isel. Example:

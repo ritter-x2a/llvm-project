@@ -36,6 +36,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
+#include <optional>
 
 using namespace llvm;
 
@@ -1644,6 +1645,107 @@ TargetInstrInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
   // If none was found, use the call frame size from the start of the basic
   // block.
   return MBB.getCallFrameSize();
+}
+
+TargetInstrInfo::CallFrameSizeInfo::callframesize_t
+TargetInstrInfo::CallFrameSizeInfo::getCallFrameSizeAt(const MachineBasicBlock &MBB) {
+  return computeCallFrameSizeAt(MBB, MBB.begin()).Value;
+}
+
+TargetInstrInfo::CallFrameSizeInfo::callframesize_t
+TargetInstrInfo::CallFrameSizeInfo::getCallFrameSizeAt(const MachineInstr &MI) {
+  return computeCallFrameSizeAt(*MI.getParent(), MI.getIterator()).Value;
+}
+
+TargetInstrInfo::CallFrameSizeInfo::Result
+TargetInstrInfo::CallFrameSizeInfo::computeCallFrameSizeAt(const MachineBasicBlock &MBB, MachineBasicBlock::const_iterator MII) {
+  if (!HasCFOpcs)
+    return Result::determined(std::nullopt);
+
+  CFStateOfBB &StoredState = CFState[MBB.getNumber()];
+
+  if (MII == MBB.end() && StoredState.ExitIsComputed)
+    return Result::determined(StoredState.Exit);
+
+  callframesize_t CFSize;
+  bool FoundInBB = false;
+
+  // Search backwards from MI for the most recent call frame instruction.
+  for (auto &AdjI : reverse(make_range(MBB.begin(), MII))) {
+    if (AdjI.getOpcode() == CFSetupOpc) {
+      CFSize = TII.getFrameTotalSize(AdjI);
+      FoundInBB = true;
+      break;
+    }
+    if (AdjI.getOpcode() == CFDestroyOpc) {
+      CFSize = std::nullopt;
+      FoundInBB = true;
+      break;
+    }
+  }
+
+  if (!FoundInBB) {
+    if (StoredState.IsComputing) {
+      // We are already computing the Entry value of this block, so don't
+      // recurse indefinitely.
+      StoredState.FoundInLoop = true;
+      return Result::undetermined();
+    }
+
+    // If there are no call frame pseudos in the block, use the size at the
+    // beginning of the block.
+    if (StoredState.EntryIsComputed) {
+      // We already computed that.
+      CFSize = StoredState.Entry;
+    } else if (MBB.predecessors().empty()) {
+      // If there is no predecessor, there is no open call frame.
+      CFSize = std::nullopt;
+      StoredState.Entry = CFSize;
+      StoredState.EntryIsComputed = true;
+    } else {
+      // We need to compute the state.
+      bool AtLeastOneDetermined = false;
+      // Note that we are computing the entry state of this block to break
+      // cycles.
+      StoredState.IsComputing = true;
+      // We only need to find a result from a single predecessor, since we
+      // assume proper usage of CallFrame pseudos, which implies that the
+      // results from all predecessors are the same.
+      for (MachineBasicBlock *Pred : MBB.predecessors()) {
+        Result R = computeCallFrameSizeAt(*Pred, Pred->end());
+        if (R.IsDetermined) {
+          // We got a result from this predecessor that does not stem from
+          // a loop.
+          CFSize = R.Value;
+          AtLeastOneDetermined = true;
+          break;
+        }
+      }
+      StoredState.IsComputing = false;
+      if (!AtLeastOneDetermined) {
+        // All predecessors had results that stem from loops.
+        if (!StoredState.FoundInLoop) {
+          // There could be paths leading to the loop that have call frame
+          // information that are not explored yet, so just report that this
+          // block is not part of such a path.
+          return Result::undetermined();
+        }
+
+        // All predecessor paths lead to loops without call frame instructions.
+        CFSize = std::nullopt;
+      }
+      // If we reached at least one predecessor with usable info, take and store it.
+      StoredState.Entry = CFSize;
+      StoredState.EntryIsComputed = true;
+    }
+  }
+
+  if (MII == MBB.end()) {
+    // If we just computed the exit information, store it.
+    StoredState.Exit = CFSize;
+    StoredState.ExitIsComputed = true;
+  }
+  return Result::determined(CFSize);
 }
 
 /// Both DefMI and UseMI must be valid.  By default, call directly to the

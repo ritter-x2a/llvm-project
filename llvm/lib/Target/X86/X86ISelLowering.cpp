@@ -35649,10 +35649,13 @@ X86TargetLowering::EmitLoweredTLSAddr(MachineInstr &MI,
   // may push the prologue/epilogue pass them.
   const TargetInstrInfo &TII = *Subtarget.getInstrInfo();
 
+  // This might perform unnecessary recomputations.
+  TargetInstrInfo::CallFrameSizeInfo CFSI(TII, *BB->getParent());
+
   // Do not introduce CALLSEQ markers if we are already in a call sequence.
   // Nested call sequences are not allowed and cause errors in the machine
   // verifier.
-  if (TII.getCallFrameSizeAt(MI).has_value())
+  if (CFSI.getCallFrameSizeAt(MI).has_value())
     return BB;
 
   const MIMetadata MIMD(MI);
