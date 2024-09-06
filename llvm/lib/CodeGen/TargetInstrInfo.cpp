@@ -1626,29 +1626,9 @@ TargetInstrInfo::describeLoadedValue(const MachineInstr &MI,
   return std::nullopt;
 }
 
-std::optional<unsigned>
-TargetInstrInfo::getCallFrameSizeAt(MachineInstr &MI) const {
-  return this->getCallFrameSizeAt(*MI.getParent(), MI.getIterator());
-}
-
-std::optional<unsigned>
-TargetInstrInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
-                                    MachineBasicBlock::iterator MII) const {
-  // Search backwards from MI for the most recent call frame instruction.
-  for (auto &AdjI : reverse(make_range(MBB.begin(), MII))) {
-    if (AdjI.getOpcode() == getCallFrameSetupOpcode())
-      return getFrameTotalSize(AdjI);
-    if (AdjI.getOpcode() == getCallFrameDestroyOpcode())
-      return std::nullopt;
-  }
-
-  // If none was found, use the call frame size from the start of the basic
-  // block.
-  return MBB.getCallFrameSize();
-}
-
 TargetInstrInfo::CallFrameSizeInfo::callframesize_t
-TargetInstrInfo::CallFrameSizeInfo::getCallFrameSizeAt(const MachineBasicBlock &MBB) {
+TargetInstrInfo::CallFrameSizeInfo::getCallFrameSizeAt(
+    const MachineBasicBlock &MBB) {
   return computeCallFrameSizeAt(MBB, MBB.begin()).Value;
 }
 
@@ -1658,7 +1638,8 @@ TargetInstrInfo::CallFrameSizeInfo::getCallFrameSizeAt(const MachineInstr &MI) {
 }
 
 TargetInstrInfo::CallFrameSizeInfo::Result
-TargetInstrInfo::CallFrameSizeInfo::computeCallFrameSizeAt(const MachineBasicBlock &MBB, MachineBasicBlock::const_iterator MII) {
+TargetInstrInfo::CallFrameSizeInfo::computeCallFrameSizeAt(
+    const MachineBasicBlock &MBB, MachineBasicBlock::const_iterator MII) {
   if (!HasCFOpcs)
     return Result::determined(std::nullopt);
 
@@ -1734,7 +1715,8 @@ TargetInstrInfo::CallFrameSizeInfo::computeCallFrameSizeAt(const MachineBasicBlo
         // All predecessor paths lead to loops without call frame instructions.
         CFSize = std::nullopt;
       }
-      // If we reached at least one predecessor with usable info, take and store it.
+      // If we reached at least one predecessor with usable info, take and store
+      // it.
       StoredState.Entry = CFSize;
       StoredState.EntryIsComputed = true;
     }

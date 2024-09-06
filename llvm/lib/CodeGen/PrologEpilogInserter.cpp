@@ -390,11 +390,6 @@ void PEI::calculateCallFrameInfo(MachineFunction &MF) {
     // need to track the SP adjustment for frame index elimination.
     for (MachineBasicBlock::iterator I : FrameSDOps)
       TFI->eliminateCallFramePseudoInstr(MF, *I->getParent(), I);
-
-    // We can't track the call frame size after call frame pseudos have been
-    // eliminated. Clear it everywhere to keep MachineVerifier happy.
-    for (MachineBasicBlock &MBB : MF)
-      MBB.clearCallFrameSize();
   }
 }
 
@@ -1362,10 +1357,6 @@ void PEI::replaceFrameIndicesBackward(MachineFunction &MF) {
     }
 
     replaceFrameIndicesBackward(&MBB, MF, SPAdj);
-
-    // We can't track the call frame size after call frame pseudos have been
-    // eliminated. Clear it everywhere to keep MachineVerifier happy.
-    MBB.clearCallFrameSize();
   }
 }
 
@@ -1382,10 +1373,6 @@ void PEI::replaceFrameIndices(MachineFunction &MF) {
       SPAdj = -SPAdj;
 
     replaceFrameIndices(&MBB, MF, SPAdj);
-
-    // We can't track the call frame size after call frame pseudos have been
-    // eliminated. Clear it everywhere to keep MachineVerifier happy.
-    MBB.clearCallFrameSize();
   }
 }
 

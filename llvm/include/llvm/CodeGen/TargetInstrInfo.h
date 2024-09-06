@@ -2265,16 +2265,6 @@ public:
     return false;
   }
 
-  /// Get the call frame size just before MI. Contains no value if MI is not in
-  /// a call sequence. Zero-sized call frames are possible.
-  std::optional<unsigned> getCallFrameSizeAt(MachineInstr &MI) const;
-
-  /// Get the call frame size just before MII. Contains no value if MII is not
-  /// in a call sequence. Zero-sized call frames are possible.
-  std::optional<unsigned>
-  getCallFrameSizeAt(MachineBasicBlock &MBB,
-                     MachineBasicBlock::iterator MII) const;
-
   /// For computing the call frame size based on CallFrameSetup and Destroy
   /// opcodes on demand and caching the results. Changes to the CFG may
   /// invalidate the information stored.

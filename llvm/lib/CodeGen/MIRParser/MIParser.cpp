@@ -759,8 +759,9 @@ bool MIParser::parseBasicBlockDefinition(
           return true;
         break;
       case MIToken::kw_call_frame_size:
-        if (parseCallFrameSize(CallFrameSize))
-          return true;
+        // if (parseCallFrameSize(CallFrameSize))
+        //   return true;
+        return true;
         break;
       default:
         break;
@@ -806,7 +807,7 @@ bool MIParser::parseBasicBlockDefinition(
       MF.setBBSectionsType(BasicBlockSection::Labels);
     MBB->setBBID(BBID.value());
   }
-  MBB->setCallFrameSize(CallFrameSize);
+  // MBB->setCallFrameSize(CallFrameSize);
   return false;
 }
 
