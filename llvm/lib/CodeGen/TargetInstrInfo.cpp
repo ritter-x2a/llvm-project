@@ -1666,6 +1666,8 @@ TargetInstrInfo::CallFrameSizeInfo::computeCallFrameSizeAt(
   }
 
   if (!FoundInBB) {
+    // If there are no call frame pseudos in the block, use the size at the
+    // beginning of the block.
     if (StoredState.IsComputing) {
       // We are already computing the Entry value of this block, so don't
       // recurse indefinitely.
@@ -1673,8 +1675,6 @@ TargetInstrInfo::CallFrameSizeInfo::computeCallFrameSizeAt(
       return Result::undetermined();
     }
 
-    // If there are no call frame pseudos in the block, use the size at the
-    // beginning of the block.
     if (StoredState.EntryIsComputed) {
       // We already computed that.
       CFSize = StoredState.Entry;
@@ -1689,7 +1689,7 @@ TargetInstrInfo::CallFrameSizeInfo::computeCallFrameSizeAt(
       // Note that we are computing the entry state of this block to break
       // cycles.
       StoredState.IsComputing = true;
-      // We only need to find a result from a single predecessor, since we
+      // We only need to find a result from a single predecessor since we
       // assume proper usage of CallFrame pseudos, which implies that the
       // results from all predecessors are the same.
       for (MachineBasicBlock *Pred : MBB.predecessors()) {
