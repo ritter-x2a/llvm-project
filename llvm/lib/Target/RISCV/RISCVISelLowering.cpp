@@ -18553,11 +18553,11 @@ static MachineBasicBlock *emitSelectPseudo(MachineInstr &MI,
   F->insert(I, IfFalseMBB);
   F->insert(I, TailMBB);
 
-  // Set the call frame size on entry to the new basic blocks.
-  std::optional<unsigned> CallFrameSize =
-      TII.getCallFrameSizeAt(*LastSelectPseudo);
-  IfFalseMBB->setCallFrameSize(CallFrameSize);
-  TailMBB->setCallFrameSize(CallFrameSize);
+  // // Set the call frame size on entry to the new basic blocks.
+  // std::optional<unsigned> CallFrameSize =
+  //     TII.getCallFrameSizeAt(*LastSelectPseudo);
+  // IfFalseMBB->setCallFrameSize(CallFrameSize);
+  // TailMBB->setCallFrameSize(CallFrameSize);
 
   // Transfer debug instructions associated with the selects to TailMBB.
   for (MachineInstr *DebugInstr : SelectDebugValues) {

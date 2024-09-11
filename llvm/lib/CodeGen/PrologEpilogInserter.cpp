@@ -394,8 +394,8 @@ void PEI::calculateCallFrameInfo(MachineFunction &MF) {
 
     // We can't track the call frame size after call frame pseudos have been
     // eliminated. Clear it everywhere to keep MachineVerifier happy.
-    for (MachineBasicBlock &MBB : MF)
-      MBB.clearCallFrameSize();
+    // for (MachineBasicBlock &MBB : MF)
+    //   MBB.clearCallFrameSize();
   }
 }
 
@@ -1340,62 +1340,12 @@ void PEI::insertZeroCallUsedRegs(MachineFunction &MF) {
       TFI.emitZeroCallUsedRegs(RegsToZero, MBB);
 }
 
-namespace {
-
-void recomputeCallFrameSizes(MachineFunction &MF) {
-  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
-  unsigned FrameSetupOpcode = TII.getCallFrameSetupOpcode();
-  unsigned FrameDestroyOpcode = TII.getCallFrameDestroyOpcode();
-  if (FrameSetupOpcode == ~0u && FrameDestroyOpcode == ~0u)
-    return;
-
-  SmallVector<std::optional<unsigned>, 8> SPState;
-  SPState.resize(MF.getNumBlockIDs());
-  df_iterator_default_set<const MachineBasicBlock *> Reachable;
-
-  // Visit the MBBs in DFS order.
-  for (df_ext_iterator<MachineFunction *,
-                       df_iterator_default_set<const MachineBasicBlock *>>
-           DFI = df_ext_begin(&MF, Reachable),
-           DFE = df_ext_end(&MF, Reachable);
-       DFI != DFE; ++DFI) {
-    MachineBasicBlock *MBB = *DFI;
-
-    std::optional<unsigned> AtEntry;
-
-    std::optional<unsigned> AtExit;
-    // Check the exit state of the DFS stack predecessor.
-    if (DFI.getPathLength() >= 2) {
-      const MachineBasicBlock *StackPred = DFI.getPath(DFI.getPathLength() - 2);
-      assert(Reachable.count(StackPred) &&
-             "DFS stack predecessor is already visited.\n");
-      AtEntry = SPState[StackPred->getNumber()];
-      AtExit = AtEntry;
-      MBB->setCallFrameSize(AtEntry);
-    }
-
-    for (auto &AdjI : reverse(make_range(MBB->begin(), MBB->end()))) {
-      if (AdjI.getOpcode() == FrameSetupOpcode) {
-        AtExit = TII.getFrameTotalSize(AdjI);
-        break;
-      }
-      if (AdjI.getOpcode() == FrameDestroyOpcode) {
-        AtExit = std::nullopt;
-        break;
-      }
-    }
-    SPState[MBB->getNumber()] = AtExit;
-  }
-}
-
-} // namespace
-
 /// Replace all FrameIndex operands with physical register references and actual
 /// offsets.
 void PEI::replaceFrameIndicesBackward(MachineFunction &MF) {
   const TargetFrameLowering &TFI = *MF.getSubtarget().getFrameLowering();
-
-  recomputeCallFrameSizes(MF);
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  TII.recomputeCallFrameSizes(MF);
 
   for (auto &MBB : MF) {
     int SPAdj = 0;
@@ -1416,7 +1366,7 @@ void PEI::replaceFrameIndicesBackward(MachineFunction &MF) {
 
     // We can't track the call frame size after call frame pseudos have been
     // eliminated. Clear it everywhere to keep MachineVerifier happy.
-    MBB.clearCallFrameSize();
+    // MBB.clearCallFrameSize();
   }
 }
 
@@ -1424,8 +1374,8 @@ void PEI::replaceFrameIndicesBackward(MachineFunction &MF) {
 /// register references and actual offsets.
 void PEI::replaceFrameIndices(MachineFunction &MF) {
   const TargetFrameLowering &TFI = *MF.getSubtarget().getFrameLowering();
-
-  recomputeCallFrameSizes(MF);
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  TII.recomputeCallFrameSizes(MF);
 
   for (auto &MBB : MF) {
     int SPAdj = TFI.alignSPAdjust(MBB.getCallFrameSizeOrZero());
@@ -1436,7 +1386,7 @@ void PEI::replaceFrameIndices(MachineFunction &MF) {
 
     // We can't track the call frame size after call frame pseudos have been
     // eliminated. Clear it everywhere to keep MachineVerifier happy.
-    MBB.clearCallFrameSize();
+    // MBB.clearCallFrameSize();
   }
 }
 

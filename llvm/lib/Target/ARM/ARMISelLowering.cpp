@@ -11593,10 +11593,10 @@ ARMTargetLowering::EmitStructByval(MachineInstr &MI,
   MF->insert(It, loopMBB);
   MF->insert(It, exitMBB);
 
-  // Set the call frame size on entry to the new basic blocks.
-  std::optional<unsigned> CallFrameSize = TII->getCallFrameSizeAt(MI);
-  loopMBB->setCallFrameSize(CallFrameSize);
-  exitMBB->setCallFrameSize(CallFrameSize);
+  // // Set the call frame size on entry to the new basic blocks.
+  // std::optional<unsigned> CallFrameSize = TII->getCallFrameSizeAt(MI);
+  // loopMBB->setCallFrameSize(CallFrameSize);
+  // exitMBB->setCallFrameSize(CallFrameSize);
 
   // Transfer the remainder of BB and its successor edges to exitMBB.
   exitMBB->splice(exitMBB->begin(), BB,
@@ -12194,10 +12194,10 @@ ARMTargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
     F->insert(It, copy0MBB);
     F->insert(It, sinkMBB);
 
-    // Set the call frame size on entry to the new basic blocks.
-    std::optional<unsigned> CallFrameSize = TII->getCallFrameSizeAt(MI);
-    copy0MBB->setCallFrameSize(CallFrameSize);
-    sinkMBB->setCallFrameSize(CallFrameSize);
+    // // Set the call frame size on entry to the new basic blocks.
+    // std::optional<unsigned> CallFrameSize = TII->getCallFrameSizeAt(MI);
+    // copy0MBB->setCallFrameSize(CallFrameSize);
+    // sinkMBB->setCallFrameSize(CallFrameSize);
 
     // Check whether CPSR is live past the tMOVCCr_pseudo.
     const TargetRegisterInfo *TRI = Subtarget->getRegisterInfo();

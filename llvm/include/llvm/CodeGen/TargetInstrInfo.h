@@ -2275,6 +2275,9 @@ public:
   getCallFrameSizeAt(MachineBasicBlock &MBB,
                      MachineBasicBlock::iterator MII) const;
 
+  /// TODO document
+  void recomputeCallFrameSizes(MachineFunction &MF) const;
+
   /// Fills in the necessary MachineOperands to refer to a frame index.
   /// The best way to understand this is to print `asm(""::"m"(x));` after
   /// finalize-isel. Example:

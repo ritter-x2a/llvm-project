@@ -817,13 +817,13 @@ bool AMDGPURegisterBankInfo::executeInWaterfallLoop(
   MachineBasicBlock *RemainderBB = MF->CreateMachineBasicBlock();
   MachineBasicBlock *RestoreExecBB = MF->CreateMachineBasicBlock();
 
-  // Set call-frame sizes in each new BB, in case we are in a call sequence.
-  std::optional<unsigned> CallFrameSizeBefore =
-      TII->getCallFrameSizeAt(MBB, Range.begin());
-  LoopBB->setCallFrameSize(CallFrameSizeBefore);
-  BodyBB->setCallFrameSize(CallFrameSizeBefore);
-  RemainderBB->setCallFrameSize(CallFrameSizeBefore);
-  RestoreExecBB->setCallFrameSize(CallFrameSizeBefore);
+  // // Set call-frame sizes in each new BB, in case we are in a call sequence.
+  // std::optional<unsigned> CallFrameSizeBefore =
+  //     TII->getCallFrameSizeAt(MBB, Range.begin());
+  // LoopBB->setCallFrameSize(CallFrameSizeBefore);
+  // BodyBB->setCallFrameSize(CallFrameSizeBefore);
+  // RemainderBB->setCallFrameSize(CallFrameSizeBefore);
+  // RestoreExecBB->setCallFrameSize(CallFrameSizeBefore);
 
   MachineFunction::iterator MBBI(MBB);
   ++MBBI;
