@@ -35633,11 +35633,11 @@ X86TargetLowering::EmitLoweredTLSAddr(MachineInstr &MI,
   // inside MC, therefore without the two markers shrink-wrapping
   // may push the prologue/epilogue pass them.
   const TargetInstrInfo &TII = *Subtarget.getInstrInfo();
-  MachineFrameSizeInfo &MFSI = MI.getMF()->getFrameInfo().getSizeInfo();
 
   // Do not introduce CALLSEQ markers if we are already in a call sequence.
   // Nested call sequences are not allowed and cause errors in the machine
   // verifier.
+  MachineFrameSizeInfo &MFSI = MI.getMF()->getFrameInfo().getSizeInfo();
   if (MFSI.getCallFrameSizeAt(MI).has_value())
     return BB;
 

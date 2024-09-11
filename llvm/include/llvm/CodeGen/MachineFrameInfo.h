@@ -863,10 +863,7 @@ public:
 
 class MachineFrameSizeInfo {
 public:
-  MachineFrameSizeInfo(MachineFunction &MF)
-      : MF(MF), TII(*MF.getSubtarget().getInstrInfo()),
-        FrameSetupOpcode(TII.getCallFrameSetupOpcode()),
-        FrameDestroyOpcode(TII.getCallFrameDestroyOpcode()) {
+  MachineFrameSizeInfo(MachineFunction &MF) : MF(MF) {
     MF.getFrameInfo().setSizeInfo(this);
   }
 
@@ -884,6 +881,10 @@ public:
   getCallFrameSizeAt(MachineBasicBlock &MBB,
                      MachineBasicBlock::iterator MII);
 
+  std::optional<unsigned> getCallFrameSizeAtBegin(MachineBasicBlock &MBB);
+
+  std::optional<unsigned> getCallFrameSizeAtEnd(MachineBasicBlock &MBB);
+
   void recompute();
 
 private:
@@ -898,9 +899,10 @@ private:
   };
 
   MachineFunction &MF;
-  const TargetInstrInfo &TII;
-  unsigned FrameSetupOpcode;
-  unsigned FrameDestroyOpcode;
+  const TargetInstrInfo *TII;
+  unsigned FrameSetupOpcode = ~0u;
+  unsigned FrameDestroyOpcode = ~0u;
+  bool HasFrameOpcodes = false;
   SmallVector<MachineFrameSizeInfoForBB, 8> State;
   bool IsComputed = false;
 };

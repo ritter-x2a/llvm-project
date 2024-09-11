@@ -254,21 +254,42 @@ MachineFrameSizeInfo::getCallFrameSizeAt(MachineInstr &MI) {
 }
 
 std::optional<unsigned>
-MachineFrameSizeInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
-                                    MachineBasicBlock::iterator MII) {
-  if (FrameSetupOpcode == ~0u && FrameDestroyOpcode == ~0u)
-    return std::nullopt;
-
+MachineFrameSizeInfo::getCallFrameSizeAtBegin(MachineBasicBlock &MBB) {
   if (!IsComputed)
     recompute();
+  if (!HasFrameOpcodes)
+    return std::nullopt;
+  return State[MBB.getNumber()].Entry;
+}
+
+std::optional<unsigned>
+MachineFrameSizeInfo::getCallFrameSizeAtEnd(MachineBasicBlock &MBB) {
+  if (!IsComputed)
+    recompute();
+  if (!HasFrameOpcodes)
+    return std::nullopt;
+  return State[MBB.getNumber()].Exit;
+}
+
+std::optional<unsigned>
+MachineFrameSizeInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
+                                    MachineBasicBlock::iterator MII) {
+  if (!IsComputed)
+    recompute();
+
+  if (!HasFrameOpcodes)
+    return std::nullopt;
 
   if (MII == MBB.end())
     return State[MBB.getNumber()].Exit;
 
+  if (MII == MBB.begin())
+    return State[MBB.getNumber()].Entry;
+
   // Search backwards from MI for the most recent call frame instruction.
   for (auto &AdjI : reverse(make_range(MBB.begin(), MII))) {
     if (AdjI.getOpcode() == FrameSetupOpcode)
-      return TII.getFrameTotalSize(AdjI);
+      return TII->getFrameTotalSize(AdjI);
     if (AdjI.getOpcode() == FrameDestroyOpcode)
       return std::nullopt;
   }
@@ -279,7 +300,14 @@ MachineFrameSizeInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
 }
 
 void MachineFrameSizeInfo::recompute() {
-  if (FrameSetupOpcode == ~0u && FrameDestroyOpcode == ~0u)
+  if (!IsComputed) {
+    TII = MF.getSubtarget().getInstrInfo();
+    FrameSetupOpcode = TII->getCallFrameSetupOpcode();
+    FrameDestroyOpcode = TII->getCallFrameDestroyOpcode();
+    HasFrameOpcodes = FrameSetupOpcode != ~0u || FrameDestroyOpcode != ~0u;
+    IsComputed = true;
+  }
+  if (!HasFrameOpcodes)
     return;
 
   State.resize(MF.getNumBlockIDs());
@@ -306,7 +334,7 @@ void MachineFrameSizeInfo::recompute() {
 
     for (auto &AdjI : reverse(make_range(MBB->begin(), MBB->end()))) {
       if (AdjI.getOpcode() == FrameSetupOpcode) {
-        BBState.Exit = TII.getFrameTotalSize(AdjI);
+        BBState.Exit = TII->getFrameTotalSize(AdjI);
         break;
       }
       if (AdjI.getOpcode() == FrameDestroyOpcode) {
@@ -316,9 +344,7 @@ void MachineFrameSizeInfo::recompute() {
     }
     State[MBB->getNumber()] = BBState;
   }
-  IsComputed = true;
 }
-
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
 LLVM_DUMP_METHOD void MachineFrameInfo::dump(const MachineFunction &MF) const {
