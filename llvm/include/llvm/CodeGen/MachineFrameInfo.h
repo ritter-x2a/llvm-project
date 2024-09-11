@@ -16,6 +16,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/Register.h"
 #include "llvm/CodeGen/TargetFrameLowering.h"
+#include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/Support/Alignment.h"
 #include <cassert>
 #include <vector>
@@ -26,6 +27,7 @@ class MachineFunction;
 class MachineBasicBlock;
 class BitVector;
 class AllocaInst;
+class MachineFrameSizeInfo;
 
 /// The CalleeSavedInfo class tracks the information need to locate where a
 /// callee saved register is in the current frame.
@@ -281,6 +283,9 @@ private:
   /// class).  This information is important for frame pointer elimination.
   /// It is only valid during and after prolog/epilog code insertion.
   uint64_t MaxCallFrameSize = ~UINT64_C(0);
+
+  /// TODO document
+  MachineFrameSizeInfo *SizeInfo = nullptr;
 
   /// The number of bytes of callee saved registers that the target wants to
   /// report for the current function in the CodeView S_FRAMEPROC record.
@@ -675,6 +680,15 @@ public:
   }
   void setMaxCallFrameSize(uint64_t S) { MaxCallFrameSize = S; }
 
+  MachineFrameSizeInfo &getSizeInfo() const {
+    assert(SizeInfo);
+    return *SizeInfo;
+  }
+
+  void setSizeInfo(MachineFrameSizeInfo *SI) {
+    SizeInfo = SI;
+  }
+
   /// Returns how many bytes of callee-saved registers the target pushed in the
   /// prologue. Only used for debug info.
   unsigned getCVBytesOfCalleeSavedRegisters() const {
@@ -845,6 +859,52 @@ public:
   /// dump - Print the function to stderr.
   void dump(const MachineFunction &MF) const;
 };
+
+
+class MachineFrameSizeInfo {
+public:
+  MachineFrameSizeInfo(MachineFunction &MF)
+      : MF(MF), TII(*MF.getSubtarget().getInstrInfo()),
+        FrameSetupOpcode(TII.getCallFrameSetupOpcode()),
+        FrameDestroyOpcode(TII.getCallFrameDestroyOpcode()) {
+    MF.getFrameInfo().setSizeInfo(this);
+  }
+
+  ~MachineFrameSizeInfo() {
+    MF.getFrameInfo().setSizeInfo(nullptr);
+  }
+
+  /// Get the call frame size just before MI. Contains no value if MI is not in
+  /// a call sequence. Zero-sized call frames are possible.
+  std::optional<unsigned> getCallFrameSizeAt(MachineInstr &MI);
+
+  /// Get the call frame size just before MII. Contains no value if MII is not
+  /// in a call sequence. Zero-sized call frames are possible.
+  std::optional<unsigned>
+  getCallFrameSizeAt(MachineBasicBlock &MBB,
+                     MachineBasicBlock::iterator MII);
+
+  void recompute();
+
+private:
+  struct MachineFrameSizeInfoForBB {
+    MachineFrameSizeInfoForBB() = default;
+    MachineFrameSizeInfoForBB(std::optional<unsigned> EntryVal,
+                  std::optional<unsigned> ExitVal)
+        : Entry(EntryVal), Exit(ExitVal) {}
+
+    std::optional<unsigned> Entry;
+    std::optional<unsigned> Exit;
+  };
+
+  MachineFunction &MF;
+  const TargetInstrInfo &TII;
+  unsigned FrameSetupOpcode;
+  unsigned FrameDestroyOpcode;
+  SmallVector<MachineFrameSizeInfoForBB, 8> State;
+  bool IsComputed = false;
+};
+
 
 } // End llvm namespace
 

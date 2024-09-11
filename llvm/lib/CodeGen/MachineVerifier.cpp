@@ -3832,15 +3832,6 @@ void MachineVerifier::verifyStackFrame() {
       BBState.Exit = BBState.Entry;
     }
 
-    // if (MBB->getCallFrameSize() != BBState.Entry) {
-    //   report("Call frame size on entry does not match value computed from "
-    //          "predecessor",
-    //          MBB);
-    //   errs() << "Call frame size on entry " << MBB->getCallFrameSize()
-    //          << " does not match value computed from predecessor "
-    //          << BBState.Entry << '\n';
-    // }
-
     // Update stack state by checking contents of MBB.
     for (const auto &I : *MBB) {
       if (I.getOpcode() == FrameSetupOpcode) {

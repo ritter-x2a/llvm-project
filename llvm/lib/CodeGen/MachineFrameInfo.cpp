@@ -13,6 +13,7 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetFrameLowering.h"
@@ -23,6 +24,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
+#include <optional>
 
 #define DEBUG_TYPE "codegen"
 
@@ -245,6 +247,78 @@ void MachineFrameInfo::print(const MachineFunction &MF, raw_ostream &OS) const{
     OS << "\n";
   }
 }
+
+std::optional<unsigned>
+MachineFrameSizeInfo::getCallFrameSizeAt(MachineInstr &MI) {
+  return this->getCallFrameSizeAt(*MI.getParent(), MI.getIterator());
+}
+
+std::optional<unsigned>
+MachineFrameSizeInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
+                                    MachineBasicBlock::iterator MII) {
+  if (FrameSetupOpcode == ~0u && FrameDestroyOpcode == ~0u)
+    return std::nullopt;
+
+  if (!IsComputed)
+    recompute();
+
+  if (MII == MBB.end())
+    return State[MBB.getNumber()].Exit;
+
+  // Search backwards from MI for the most recent call frame instruction.
+  for (auto &AdjI : reverse(make_range(MBB.begin(), MII))) {
+    if (AdjI.getOpcode() == FrameSetupOpcode)
+      return TII.getFrameTotalSize(AdjI);
+    if (AdjI.getOpcode() == FrameDestroyOpcode)
+      return std::nullopt;
+  }
+
+  // If none was found, use the call frame size from the start of the basic
+  // block.
+  return State[MBB.getNumber()].Entry;
+}
+
+void MachineFrameSizeInfo::recompute() {
+  if (FrameSetupOpcode == ~0u && FrameDestroyOpcode == ~0u)
+    return;
+
+  State.resize(MF.getNumBlockIDs());
+  df_iterator_default_set<const MachineBasicBlock *> Reachable;
+
+  // Visit the MBBs in DFS order.
+  for (df_ext_iterator<MachineFunction *,
+                       df_iterator_default_set<const MachineBasicBlock *>>
+           DFI = df_ext_begin(&MF, Reachable),
+           DFE = df_ext_end(&MF, Reachable);
+       DFI != DFE; ++DFI) {
+    const MachineBasicBlock *MBB = *DFI;
+
+    MachineFrameSizeInfoForBB BBState;
+
+    // Use the exit state of the DFS stack predecessor.
+    if (DFI.getPathLength() >= 2) {
+      const MachineBasicBlock *StackPred = DFI.getPath(DFI.getPathLength() - 2);
+      assert(Reachable.count(StackPred) &&
+             "DFS stack predecessor is already visited.\n");
+      BBState.Entry = State[StackPred->getNumber()].Exit;
+      BBState.Exit = BBState.Entry;
+    }
+
+    for (auto &AdjI : reverse(make_range(MBB->begin(), MBB->end()))) {
+      if (AdjI.getOpcode() == FrameSetupOpcode) {
+        BBState.Exit = TII.getFrameTotalSize(AdjI);
+        break;
+      }
+      if (AdjI.getOpcode() == FrameDestroyOpcode) {
+        BBState.Exit = std::nullopt;
+        break;
+      }
+    }
+    State[MBB->getNumber()] = BBState;
+  }
+  IsComputed = true;
+}
+
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
 LLVM_DUMP_METHOD void MachineFrameInfo::dump(const MachineFunction &MF) const {

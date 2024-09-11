@@ -35308,11 +35308,6 @@ X86TargetLowering::EmitLoweredSelect(MachineInstr &MI,
   F->insert(It, FalseMBB);
   F->insert(It, SinkMBB);
 
-  // // Set the call frame size on entry to the new basic blocks.
-  // std::optional<unsigned> CallFrameSize = TII->getCallFrameSizeAt(MI);
-  // FalseMBB->setCallFrameSize(CallFrameSize);
-  // SinkMBB->setCallFrameSize(CallFrameSize);
-
   // If the EFLAGS register isn't dead in the terminator, then claim that it's
   // live into the sink and copy blocks.
   const TargetRegisterInfo *TRI = Subtarget.getRegisterInfo();
@@ -35381,16 +35376,6 @@ X86TargetLowering::EmitLoweredProbedAlloca(MachineInstr &MI,
   MachineBasicBlock *testMBB = MF->CreateMachineBasicBlock(LLVM_BB);
   MachineBasicBlock *tailMBB = MF->CreateMachineBasicBlock(LLVM_BB);
   MachineBasicBlock *blockMBB = MF->CreateMachineBasicBlock(LLVM_BB);
-
-  // // Set call-frame sizes in each new BB, in case we are in a call sequence.
-  // // MBB is split at std::next(MachineBasicBlock::iterator(MI) and these blocks
-  // // are inserted in between, so they should all have the call frame size at
-  // // the split point.
-  // std::optional<unsigned> CallFrameSizeAtSplit =
-  //     TII->getCallFrameSizeAt(*MBB, std::next(MachineBasicBlock::iterator(MI)));
-  // testMBB->setCallFrameSize(CallFrameSizeAtSplit);
-  // blockMBB->setCallFrameSize(CallFrameSizeAtSplit);
-  // tailMBB->setCallFrameSize(CallFrameSizeAtSplit);
 
   MachineFunction::iterator MBBIter = ++MBB->getIterator();
   MF->insert(MBBIter, testMBB);
@@ -35648,11 +35633,12 @@ X86TargetLowering::EmitLoweredTLSAddr(MachineInstr &MI,
   // inside MC, therefore without the two markers shrink-wrapping
   // may push the prologue/epilogue pass them.
   const TargetInstrInfo &TII = *Subtarget.getInstrInfo();
+  MachineFrameSizeInfo &MFSI = MI.getMF()->getFrameInfo().getSizeInfo();
 
   // Do not introduce CALLSEQ markers if we are already in a call sequence.
   // Nested call sequences are not allowed and cause errors in the machine
   // verifier.
-  if (TII.getCallFrameSizeAt(MI).has_value())
+  if (MFSI.getCallFrameSizeAt(MI).has_value())
     return BB;
 
   const MIMetadata MIMD(MI);

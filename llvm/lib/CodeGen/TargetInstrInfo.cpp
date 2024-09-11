@@ -11,7 +11,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/TargetInstrInfo.h"
-#include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -1624,74 +1623,6 @@ TargetInstrInfo::describeLoadedValue(const MachineInstr &MI,
   }
 
   return std::nullopt;
-}
-
-std::optional<unsigned>
-TargetInstrInfo::getCallFrameSizeAt(MachineInstr &MI) const {
-  return this->getCallFrameSizeAt(*MI.getParent(), MI.getIterator());
-}
-
-std::optional<unsigned>
-TargetInstrInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
-                                    MachineBasicBlock::iterator MII) const {
-  // Search backwards from MI for the most recent call frame instruction.
-  for (auto &AdjI : reverse(make_range(MBB.begin(), MII))) {
-    if (AdjI.getOpcode() == getCallFrameSetupOpcode())
-      return getFrameTotalSize(AdjI);
-    if (AdjI.getOpcode() == getCallFrameDestroyOpcode())
-      return std::nullopt;
-  }
-
-  // If none was found, use the call frame size from the start of the basic
-  // block.
-  return MBB.getCallFrameSize();
-}
-
-void TargetInstrInfo::recomputeCallFrameSizes(MachineFunction &MF) const {
-  unsigned FrameSetupOpcode = getCallFrameSetupOpcode();
-  unsigned FrameDestroyOpcode = getCallFrameDestroyOpcode();
-  if (FrameSetupOpcode == ~0u && FrameDestroyOpcode == ~0u)
-    return;
-
-  SmallVector<std::optional<unsigned>, 8> SPState;
-  SPState.resize(MF.getNumBlockIDs());
-  df_iterator_default_set<const MachineBasicBlock *> Reachable;
-
-  // Visit the MBBs in DFS order.
-  for (df_ext_iterator<MachineFunction *,
-                       df_iterator_default_set<const MachineBasicBlock *>>
-           DFI = df_ext_begin(&MF, Reachable),
-           DFE = df_ext_end(&MF, Reachable);
-       DFI != DFE; ++DFI) {
-    MachineBasicBlock *MBB = *DFI;
-
-    std::optional<unsigned> AtEntry;
-    std::optional<unsigned> AtExit;
-
-    // Use the exit state of the DFS stack predecessor.
-    if (DFI.getPathLength() >= 2) {
-      const MachineBasicBlock *StackPred = DFI.getPath(DFI.getPathLength() - 2);
-      assert(Reachable.count(StackPred) &&
-             "DFS stack predecessor is already visited.\n");
-      AtEntry = SPState[StackPred->getNumber()];
-      AtExit = AtEntry;
-      MBB->setCallFrameSize(AtEntry);
-    } else {
-      MBB->setCallFrameSize(std::nullopt);
-    }
-
-    for (auto &AdjI : reverse(make_range(MBB->begin(), MBB->end()))) {
-      if (AdjI.getOpcode() == FrameSetupOpcode) {
-        AtExit = getFrameTotalSize(AdjI);
-        break;
-      }
-      if (AdjI.getOpcode() == FrameDestroyOpcode) {
-        AtExit = std::nullopt;
-        break;
-      }
-    }
-    SPState[MBB->getNumber()] = AtExit;
-  }
 }
 
 /// Both DefMI and UseMI must be valid.  By default, call directly to the

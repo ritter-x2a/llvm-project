@@ -48,7 +48,9 @@ static std::pair<bool, bool> runImpl(MachineFunction &MF) {
   const TargetLowering *TLI = MF.getSubtarget().getTargetLowering();
 
   // TODO document
-  TII->recomputeCallFrameSizes(MF);
+  // TII->recomputeCallFrameSizes(MF);
+  // Register's itself with MF's MachineFrameInfo.
+  const MachineFrameSizeInfo CFSI(MF);
 
   // Iterate through each instruction in the function, looking for pseudos.
   for (MachineFunction::iterator I = MF.begin(), E = MF.end(); I != E; ++I) {
