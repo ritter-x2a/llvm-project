@@ -328,12 +328,13 @@ void MachineFrameSizeInfo::computeSizes() {
                                unsigned FrameDestroyOpcode) {
     for (const auto &MBB : MF) {
       for (const auto &I : MBB) {
-        if (I.getOpcode() == FrameSetupOpcode)
+        unsigned Opcode = I.getOpcode();
+        if (Opcode == FrameSetupOpcode)
           break;
-        if (I.getOpcode() == FrameDestroyOpcode) {
+        if (Opcode == FrameDestroyOpcode) {
           // A FrameDestroy without a preceeding FrameSetup in the MBB. If
           // FrameInstructions are placed correctly (which we assume), this
-          // happens if and only if a call sequence is broken into multiple
+          // occurs if and only if a call sequence is broken into multiple
           // blocks.
           return true;
         }

@@ -16,7 +16,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/Register.h"
 #include "llvm/CodeGen/TargetFrameLowering.h"
-#include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/Support/Alignment.h"
 #include <cassert>
 #include <vector>
@@ -28,6 +27,7 @@ class MachineBasicBlock;
 class BitVector;
 class AllocaInst;
 class MachineFrameSizeInfo;
+class TargetInstrInfo;
 
 /// The CalleeSavedInfo class tracks the information need to locate where a
 /// callee saved register is in the current frame.
@@ -922,7 +922,7 @@ private:
   unsigned FrameDestroyOpcode = ~0u;
   bool HasFrameOpcodes = false;
   bool HasNoBrokenUpCallSeqs = false;
-  SmallVector<MachineFrameSizeInfoForBB, 8> State;
+  SmallVector<MachineFrameSizeInfoForBB, 0> State;
   bool IsComputed = false;
 };
 
