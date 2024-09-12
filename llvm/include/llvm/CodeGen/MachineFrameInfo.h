@@ -921,6 +921,7 @@ private:
   unsigned FrameSetupOpcode = ~0u;
   unsigned FrameDestroyOpcode = ~0u;
   bool HasFrameOpcodes = false;
+  bool HasNoBrokenUpCallSeqs = false;
   SmallVector<MachineFrameSizeInfoForBB, 8> State;
   bool IsComputed = false;
 };

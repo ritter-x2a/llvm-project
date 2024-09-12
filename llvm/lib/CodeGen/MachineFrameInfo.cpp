@@ -257,7 +257,7 @@ std::optional<unsigned>
 MachineFrameSizeInfo::getCallFrameSizeAtBegin(MachineBasicBlock &MBB) {
   if (!IsComputed)
     computeSizes();
-  if (!HasFrameOpcodes)
+  if (HasNoBrokenUpCallSeqs || !HasFrameOpcodes)
     return std::nullopt;
   return State[MBB.getNumber()].Entry;
 }
@@ -266,7 +266,7 @@ std::optional<unsigned>
 MachineFrameSizeInfo::getCallFrameSizeAtEnd(MachineBasicBlock &MBB) {
   if (!IsComputed)
     computeSizes();
-  if (!HasFrameOpcodes)
+  if (HasNoBrokenUpCallSeqs || !HasFrameOpcodes)
     return std::nullopt;
   return State[MBB.getNumber()].Exit;
 }
@@ -280,11 +280,17 @@ MachineFrameSizeInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
   if (!HasFrameOpcodes)
     return std::nullopt;
 
-  if (MII == MBB.end())
+  if (MII == MBB.end()) {
+    if (HasNoBrokenUpCallSeqs)
+      return std::nullopt;
     return State[MBB.getNumber()].Exit;
+  }
 
-  if (MII == MBB.begin())
+  if (MII == MBB.begin()) {
+    if (HasNoBrokenUpCallSeqs)
+      return std::nullopt;
     return State[MBB.getNumber()].Entry;
+  }
 
   // Search backwards from MI for the most recent call frame instruction.
   for (auto &AdjI : reverse(make_range(MBB.begin(), MII))) {
@@ -296,6 +302,8 @@ MachineFrameSizeInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
 
   // If none was found, use the call frame size from the start of the basic
   // block.
+  if (HasNoBrokenUpCallSeqs)
+    return std::nullopt;
   return State[MBB.getNumber()].Entry;
 }
 
@@ -314,9 +322,8 @@ void MachineFrameSizeInfo::computeSizes() {
   if (!HasFrameOpcodes)
     return;
 
-  State.resize(MF.getNumBlockIDs());
-
-  auto HasBrokenUpCallSeq = [](const MachineFunction &MF,
+  // Returns true if a call sequence in MF is broken up over multiple blocks.
+  auto FindBrokenUpCallSeq = [](const MachineFunction &MF,
                                unsigned FrameSetupOpcode,
                                unsigned FrameDestroyOpcode) {
     for (const auto &MBB : MF) {
@@ -335,11 +342,16 @@ void MachineFrameSizeInfo::computeSizes() {
     return false;
   };
 
+  HasNoBrokenUpCallSeqs =
+      !FindBrokenUpCallSeq(MF, FrameSetupOpcode, FrameDestroyOpcode);
+
   // If every call sequence is limited to a single basic block, the frame sizes
   // at entry and exit of each basic block need to be std::nullopt, so there is
   // nothing to compute.
-  if (!HasBrokenUpCallSeq(MF, FrameSetupOpcode, FrameDestroyOpcode))
+  if (HasNoBrokenUpCallSeqs)
     return;
+
+  State.resize(MF.getNumBlockIDs());
 
   df_iterator_default_set<const MachineBasicBlock *> Reachable;
 
