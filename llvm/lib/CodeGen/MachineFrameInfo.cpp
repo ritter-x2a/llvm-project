@@ -256,7 +256,7 @@ MachineFrameSizeInfo::getCallFrameSizeAt(MachineInstr &MI) {
 std::optional<unsigned>
 MachineFrameSizeInfo::getCallFrameSizeAtBegin(MachineBasicBlock &MBB) {
   if (!IsComputed)
-    compute();
+    computeSizes();
   if (!HasFrameOpcodes)
     return std::nullopt;
   return State[MBB.getNumber()].Entry;
@@ -265,7 +265,7 @@ MachineFrameSizeInfo::getCallFrameSizeAtBegin(MachineBasicBlock &MBB) {
 std::optional<unsigned>
 MachineFrameSizeInfo::getCallFrameSizeAtEnd(MachineBasicBlock &MBB) {
   if (!IsComputed)
-    compute();
+    computeSizes();
   if (!HasFrameOpcodes)
     return std::nullopt;
   return State[MBB.getNumber()].Exit;
@@ -273,9 +273,9 @@ MachineFrameSizeInfo::getCallFrameSizeAtEnd(MachineBasicBlock &MBB) {
 
 std::optional<unsigned>
 MachineFrameSizeInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
-                                    MachineBasicBlock::iterator MII) {
+                                         MachineBasicBlock::iterator MII) {
   if (!IsComputed)
-    compute();
+    computeSizes();
 
   if (!HasFrameOpcodes)
     return std::nullopt;
@@ -299,8 +299,9 @@ MachineFrameSizeInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
   return State[MBB.getNumber()].Entry;
 }
 
-void MachineFrameSizeInfo::compute() {
+void MachineFrameSizeInfo::computeSizes() {
   if (!IsComputed) {
+    // Populate fields that are only required once we compute the frame sizes.
     TII = MF.getSubtarget().getInstrInfo();
     FrameSetupOpcode = TII->getCallFrameSetupOpcode();
     FrameDestroyOpcode = TII->getCallFrameDestroyOpcode();
@@ -308,40 +309,23 @@ void MachineFrameSizeInfo::compute() {
     assert(!HasFrameOpcodes || FrameSetupOpcode != FrameDestroyOpcode);
     IsComputed = true;
   }
+  // If the target has no call frame pseudo instructions, don't compute
+  // anything, we always return std::nullopt if queried.
   if (!HasFrameOpcodes)
     return;
 
   State.resize(MF.getNumBlockIDs());
 
-  // auto HasOpcode = [](const MachineFunction &MF, unsigned Opcode) {
-  //   for (const auto &MBB : MF) {
-  //     for (const auto &I: MBB) {
-  //       if (I.getOpcode() == Opcode) {
-  //         return true;
-  //       }
-  //     }
-  //   }
-  //   return false;
-  // };
-
-  // // If there are no frame instructions in this function, there is nothing to
-  // // compute, so return early. Not necessary for correctness but saves compile
-  // // time in the average case.
-  // // There is no need to check for FrameDestroy: If they are placed correctly
-  // // (which we assume), one implies the other.
-  // if (!HasOpcode(MF, FrameSetupOpcode))
-  //   return;
-
   auto HasBrokenUpCallSeq = [](const MachineFunction &MF,
-                                    unsigned FrameSetupOpcode,
-                                    unsigned FrameDestroyOpcode) {
+                               unsigned FrameSetupOpcode,
+                               unsigned FrameDestroyOpcode) {
     for (const auto &MBB : MF) {
       for (const auto &I : MBB) {
         if (I.getOpcode() == FrameSetupOpcode)
           break;
         if (I.getOpcode() == FrameDestroyOpcode) {
-          // A FrameDestroy happens without a preceeding FrameSetup in the MBB.
-          // If FrameInstructions are placed correctly (which we assume), this
+          // A FrameDestroy without a preceeding FrameSetup in the MBB. If
+          // FrameInstructions are placed correctly (which we assume), this
           // happens if and only if a call sequence is broken into multiple
           // blocks.
           return true;
@@ -369,7 +353,9 @@ void MachineFrameSizeInfo::compute() {
 
     MachineFrameSizeInfoForBB BBState;
 
-    // Use the exit state of the DFS stack predecessor.
+    // Use the exit state of the DFS stack predecessor as entry state for this
+    // block. With correctly placed call frame instructions, other predecessors
+    // must have the same call frame size at exit.
     if (DFI.getPathLength() >= 2) {
       const MachineBasicBlock *StackPred = DFI.getPath(DFI.getPathLength() - 2);
       assert(Reachable.count(StackPred) &&
@@ -378,6 +364,8 @@ void MachineFrameSizeInfo::compute() {
       BBState.Exit = BBState.Entry;
     }
 
+    // Search backwards for the last call frame instruction and use its implied
+    // state for the block exit. Otherwise, it remains equal to the entry state.
     for (auto &AdjI : reverse(make_range(MBB->begin(), MBB->end()))) {
       if (AdjI.getOpcode() == FrameSetupOpcode) {
         BBState.Exit = TII->getFrameTotalSize(AdjI);

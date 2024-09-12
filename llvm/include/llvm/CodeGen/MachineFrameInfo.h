@@ -284,7 +284,8 @@ private:
   /// It is only valid during and after prolog/epilog code insertion.
   uint64_t MaxCallFrameSize = ~UINT64_C(0);
 
-  /// TODO document
+  /// Call frame sizes for the MachineFunction's MachineBasicBlocks. This is set
+  /// by the MachineFrameSizeInfo constructor and cleared by its destructor.
   MachineFrameSizeInfo *SizeInfo = nullptr;
 
   /// The number of bytes of callee saved registers that the target wants to
@@ -680,14 +681,12 @@ public:
   }
   void setMaxCallFrameSize(uint64_t S) { MaxCallFrameSize = S; }
 
-  MachineFrameSizeInfo &getSizeInfo() const {
-    assert(SizeInfo);
-    return *SizeInfo;
-  }
-
-  void setSizeInfo(MachineFrameSizeInfo *SI) {
-    SizeInfo = SI;
-  }
+  /// Return an object that can be queried for call frame sizes at specific
+  /// locations in the MachineFunction. Constructing a MachineFrameSizeInfo
+  /// object for the MachineFunction automatically makes it available via this
+  /// field during the object's lifetime.
+  MachineFrameSizeInfo *getSizeInfo() const { return SizeInfo; }
+  void setSizeInfo(MachineFrameSizeInfo *SI) { SizeInfo = SI; }
 
   /// Returns how many bytes of callee-saved registers the target pushed in the
   /// prologue. Only used for debug info.
@@ -860,16 +859,28 @@ public:
   void dump(const MachineFunction &MF) const;
 };
 
-
+/// Computes and stores the call frame sizes at the entries and exits of
+/// MachineBasicBlocks of a MachineFunction based on call frame setup and
+/// destroy pseudo instructions. Usually, no call frame is open at block
+/// boundaries, except if a call sequence has been split into multiple blocks.
+///
+/// Computing this information is deferred until it is queried. Upon
+/// construction, a MachineFrameSizeInfo object registers itself in the
+/// MachineFunction's MachineFrameInfo (and it unregisters when destructed).
+/// While registered, it can be retrieved via MachineFrameInfo::getSizeInfo().
+///
+/// This class assumes that call frame instructions are placed properly, i.e.,
+/// every program path hits a frame destroy of equal size after hitting a frame
+/// setup, and a frame setup of equal size before a frame destroy. Nested call
+/// frame sequences are not allowed.
 class MachineFrameSizeInfo {
 public:
   MachineFrameSizeInfo(MachineFunction &MF) : MF(MF) {
+    assert(MF.getFrameInfo().getSizeInfo() == nullptr);
     MF.getFrameInfo().setSizeInfo(this);
   }
 
-  ~MachineFrameSizeInfo() {
-    MF.getFrameInfo().setSizeInfo(nullptr);
-  }
+  ~MachineFrameSizeInfo() { MF.getFrameInfo().setSizeInfo(nullptr); }
 
   /// Get the call frame size just before MI. Contains no value if MI is not in
   /// a call sequence. Zero-sized call frames are possible.
@@ -877,29 +888,33 @@ public:
 
   /// Get the call frame size just before MII. Contains no value if MII is not
   /// in a call sequence. Zero-sized call frames are possible.
-  std::optional<unsigned>
-  getCallFrameSizeAt(MachineBasicBlock &MBB,
-                     MachineBasicBlock::iterator MII);
+  std::optional<unsigned> getCallFrameSizeAt(MachineBasicBlock &MBB,
+                                             MachineBasicBlock::iterator MII);
 
-  /// TODO document
+  /// Get the call frame size at the entry of MBB. Contains no value if the
+  /// entry of MBB is not in a call sequence. Zero-sized call frames are
+  /// possible. Prefer this over getCallFrameSizeAt(MBB, MBB.begin()).
   std::optional<unsigned> getCallFrameSizeAtBegin(MachineBasicBlock &MBB);
 
-  /// TODO document
+  /// Get the call frame size at the exit of MBB. Contains no value if the exit
+  /// of MBB is not in a call sequence. Zero-sized call frames are possible.
+  /// Prefer this over getCallFrameSizeAt(MBB, MBB.end()).
   std::optional<unsigned> getCallFrameSizeAtEnd(MachineBasicBlock &MBB);
 
 private:
+  /// Stores the call frame sizes at the boundaries of a MachineBasicBlock.
   struct MachineFrameSizeInfoForBB {
     MachineFrameSizeInfoForBB() = default;
     MachineFrameSizeInfoForBB(std::optional<unsigned> EntryVal,
-                  std::optional<unsigned> ExitVal)
+                              std::optional<unsigned> ExitVal)
         : Entry(EntryVal), Exit(ExitVal) {}
 
     std::optional<unsigned> Entry;
     std::optional<unsigned> Exit;
   };
 
-  /// TODO document
-  void compute();
+  /// Compute call frame sizes at the boundaries of each MachineBasicBlock.
+  void computeSizes();
 
   MachineFunction &MF;
   const TargetInstrInfo *TII;

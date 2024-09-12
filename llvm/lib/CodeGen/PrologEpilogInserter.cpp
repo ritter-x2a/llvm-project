@@ -1341,8 +1341,7 @@ void PEI::replaceFrameIndicesBackward(MachineFunction &MF) {
   MachineFrameSizeInfo MFSI(MF);
 
   for (auto &MBB : MF) {
-    int SPAdj =
-        TFI.alignSPAdjust(MFSI.getCallFrameSizeAtEnd(MBB).value_or(0));
+    int SPAdj = TFI.alignSPAdjust(MFSI.getCallFrameSizeAtEnd(MBB).value_or(0));
     if (TFI.getStackGrowthDirection() == TargetFrameLowering::StackGrowsUp)
       SPAdj = -SPAdj;
 
@@ -1357,8 +1356,8 @@ void PEI::replaceFrameIndices(MachineFunction &MF) {
   MachineFrameSizeInfo MFSI(MF);
 
   for (auto &MBB : MF) {
-    int SPAdj = TFI.alignSPAdjust(
-        MFSI.getCallFrameSizeAtBegin(MBB).value_or(0));
+    int SPAdj =
+        TFI.alignSPAdjust(MFSI.getCallFrameSizeAtBegin(MBB).value_or(0));
     if (TFI.getStackGrowthDirection() == TargetFrameLowering::StackGrowsUp)
       SPAdj = -SPAdj;
 
