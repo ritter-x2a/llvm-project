@@ -256,7 +256,7 @@ MachineFrameSizeInfo::getCallFrameSizeAt(MachineInstr &MI) {
 std::optional<unsigned>
 MachineFrameSizeInfo::getCallFrameSizeAtBegin(MachineBasicBlock &MBB) {
   if (!IsComputed)
-    recompute();
+    compute();
   if (!HasFrameOpcodes)
     return std::nullopt;
   return State[MBB.getNumber()].Entry;
@@ -265,7 +265,7 @@ MachineFrameSizeInfo::getCallFrameSizeAtBegin(MachineBasicBlock &MBB) {
 std::optional<unsigned>
 MachineFrameSizeInfo::getCallFrameSizeAtEnd(MachineBasicBlock &MBB) {
   if (!IsComputed)
-    recompute();
+    compute();
   if (!HasFrameOpcodes)
     return std::nullopt;
   return State[MBB.getNumber()].Exit;
@@ -275,7 +275,7 @@ std::optional<unsigned>
 MachineFrameSizeInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
                                     MachineBasicBlock::iterator MII) {
   if (!IsComputed)
-    recompute();
+    compute();
 
   if (!HasFrameOpcodes)
     return std::nullopt;
@@ -299,18 +299,64 @@ MachineFrameSizeInfo::getCallFrameSizeAt(MachineBasicBlock &MBB,
   return State[MBB.getNumber()].Entry;
 }
 
-void MachineFrameSizeInfo::recompute() {
+void MachineFrameSizeInfo::compute() {
   if (!IsComputed) {
     TII = MF.getSubtarget().getInstrInfo();
     FrameSetupOpcode = TII->getCallFrameSetupOpcode();
     FrameDestroyOpcode = TII->getCallFrameDestroyOpcode();
     HasFrameOpcodes = FrameSetupOpcode != ~0u || FrameDestroyOpcode != ~0u;
+    assert(!HasFrameOpcodes || FrameSetupOpcode != FrameDestroyOpcode);
     IsComputed = true;
   }
   if (!HasFrameOpcodes)
     return;
 
   State.resize(MF.getNumBlockIDs());
+
+  auto HasOpcode = [](const MachineFunction &MF, unsigned Opcode) {
+    for (const auto &MBB : MF) {
+      for (const auto &I: MBB) {
+        if (I.getOpcode() == Opcode) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  // If there are no frame instructions in this function, there is nothing to
+  // compute, so return early. Not necessary for correctness but saves compile
+  // time in the average case.
+  // There is no need to check for FrameDestroy: If they are placed correctly
+  // (which we assume), one implies the other.
+  if (!HasOpcode(MF, FrameSetupOpcode))
+    return;
+
+  // auto HasBrokenUpCallSeq = [](const MachineFunction &MF,
+  //                                   unsigned FrameSetupOpcode,
+  //                                   unsigned FrameDestroyOpcode) {
+  //   for (const auto &MBB : MF) {
+  //     for (const auto &I : MBB) {
+  //       if (I.getOpcode() == FrameSetupOpcode)
+  //         break;
+  //       if (I.getOpcode() == FrameDestroyOpcode) {
+  //         // A FrameDestroy happens without a preceeding FrameSetup in the MBB.
+  //         // If FrameInstructions are placed correctly (which we assume), this
+  //         // happens if and only if a call sequence is broken into multiple
+  //         // blocks.
+  //         return true;
+  //       }
+  //     }
+  //   }
+  //   return false;
+  // };
+
+  // // If every call sequence is limited to a single basic block, the frame sizes
+  // // at entry and exit of each basic block need to be std::nullopt, so there is
+  // // nothing to compute.
+  // if (!HasBrokenUpCallSeq(MF, FrameSetupOpcode, FrameDestroyOpcode))
+  //   return;
+
   df_iterator_default_set<const MachineBasicBlock *> Reachable;
 
   // Visit the MBBs in DFS order.

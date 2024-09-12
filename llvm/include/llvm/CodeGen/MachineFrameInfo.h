@@ -881,11 +881,11 @@ public:
   getCallFrameSizeAt(MachineBasicBlock &MBB,
                      MachineBasicBlock::iterator MII);
 
+  /// TODO document
   std::optional<unsigned> getCallFrameSizeAtBegin(MachineBasicBlock &MBB);
 
+  /// TODO document
   std::optional<unsigned> getCallFrameSizeAtEnd(MachineBasicBlock &MBB);
-
-  void recompute();
 
 private:
   struct MachineFrameSizeInfoForBB {
@@ -898,6 +898,9 @@ private:
     std::optional<unsigned> Exit;
   };
 
+  /// TODO document
+  void compute();
+
   MachineFunction &MF;
   const TargetInstrInfo *TII;
   unsigned FrameSetupOpcode = ~0u;
@@ -906,7 +909,6 @@ private:
   SmallVector<MachineFrameSizeInfoForBB, 8> State;
   bool IsComputed = false;
 };
-
 
 } // End llvm namespace
 
