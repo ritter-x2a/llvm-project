@@ -922,7 +922,7 @@ private:
   unsigned FrameDestroyOpcode = ~0u;
   bool HasFrameOpcodes = false;
   bool HasNoBrokenUpCallSeqs = false;
-  SmallVector<MachineFrameSizeInfoForBB, 0> State;
+  SmallVector<MachineFrameSizeInfoForBB, 8> State;
   bool IsComputed = false;
 };
 
